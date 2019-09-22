@@ -1,9 +1,12 @@
-import logging; logging.basicConfig(level=logging.INFO)
-import asyncio, os, json
+#!/usr/bin.env python3
+#-*-coding:utf-8-*-
 
-from aiohttp import web 
+import logging,asyncio
+import aiomysql
 
-from orm import Model, StrinField, IntegerField
+def log(sql, args=()):
+	logging.info('SQL:%s' % sql)
+
 
 @asyncio.coroutine
 def create_pool(loop, **kw):
@@ -51,6 +54,12 @@ def execute(sql, args):
 			raise
 		return affected
 
+def create_args_string(num):
+	L = []
+	for n in range(num):
+		L.append('?')
+	return ','.join(L)
+
 
 
 class User(Model):
@@ -89,6 +98,49 @@ class Model(dict, metaclass=ModelMetaclass):
 
 	@classmethod
 	@asyncio.coroutine
+	def findAll(cls, where=None, args=None, **kw):
+		'find objects by where clause.'
+		sql = [cls.__select__]
+		if where:
+			sql.append('where')
+			sql.append(where)
+		if args is None:
+			args = []
+		orderBy = kw.get('orderBy'. None)
+		if orderBy:
+			sql.append('orderBy')
+			sql.append(orderBy)
+		limit = kw.get('limit', None)
+		if limit is not None:
+			sql.append('limit')
+			if isinstance(limit, int):
+				sql.append('?')
+				args.append(limit)
+			elif isinstance(limit, tuple) and len(limit) == 2:
+				sql.append('?,?')
+				args.append(limit)
+			else:
+				raise ValueError('Invalid limit value:%s' % str(limit))
+		rs = yield from select(''.join(sql), args)
+		if len(rs) == 0:
+			return None
+		return cls(**rs[0])
+
+	@classmethod
+	@asyncio.coroutine
+	def findNumber(cls, selectField, where=None, args=None):
+		'find number by select and where.'
+		sql = ['select %s _num_from `%s`' % (selectField, cls.__table__)]
+		if where:
+			sql.append('where')
+			sql.append(where)
+		rs = yield from select(''.join(sql), args, 1)
+		if len(rs) == 0:
+			return None
+		return cls(**rs[0]['_num_'])
+
+	@classmethod
+	@asyncio.coroutine
 	def find(cls, pk):
 		' find object by primary key. '
 		rs = yield from select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__),
@@ -105,7 +157,22 @@ class Model(dict, metaclass=ModelMetaclass):
 		if rows != 1:
 			logging.warn('failed to insert record: affected rows: %s' % rows)
 
-class  Field(ob(object):
+	@asyncio.coroutine
+	def update(self):
+		args = list(map(self.getValue, self.__fields__))
+		args.append(self.getValue(self.__primary_key__))
+		rows = yield from execute(self.__update__, args)
+		if rows != 1:
+			logging.warn('failed to update by primary key: affected rows:%s' %s)
+
+	@asyncio.coroutine
+	def remove(self):
+		args = [self.getValue(self.__primary_key__)]
+		rows = yield from execute(self.__delete__, args)
+		if rows != 1:
+			logging.warn('failed to remove by primary key: affected rows:%s' % rows)
+
+class Field(object):
 
 	def __init__(self, name, column_type, primary_key, default):
 		self.name = name
@@ -114,14 +181,33 @@ class  Field(ob(object):
 		self.default = default
 
 	def __str__(self):
-		return '<%s, %s:%s>' % (self.__class__.__na通过类提供的接口进行访通过类提供的接口进行访me__, self.column_type, self.name)
-
+		return '<%s, %s:%s>' % (self.__class__.__name__, self.column_type, self.name)
 
 class StringField(Field):
 
 	def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
 		super().__init__(name, ddl, primary_key, default)
 
+class BooleanField(Field):
+
+	def __init__(self, name=None, default=False):
+		super().__init__(name, 'boolean', False, default)
+
+class IntegerField(Field):
+
+	def __init__(self, name=None, primary_key=False, default = 0):
+		super().__init__(name, 'bigint', primary_key, default)
+
+class FloatField(Fie):
+	"""docstring for FloatField"""
+	def __init__(self, name=None, primary_key=Flase, default=0.0):
+		super().__init__(name, 'real', primary_key, default)
+		
+class TextField(Fiel):
+	"""docstring for TextField"""
+	def __init__(self, name=None, default=None):
+		super().__init__(name, 'text', Flase, default)
+		
 class ModelMetaclass(type):
 
 	def __new__(cls, name, bases, attrs):
