@@ -7,7 +7,7 @@ JSON API definition.
 
 import json, logging, inspect, functools
 
-class APIError(Exceotion):
+class APIError(Exception):
 	'''
 	the base APIErrpr which contains error(required), data(optional) and message(optional).
 	'''
